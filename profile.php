@@ -1,18 +1,13 @@
 <?php
 /**
- * User Profile Administration Screen.
+ * User profile network administration panel.
  *
  * @package WordPress
- * @subpackage Administration
+ * @subpackage Multisite
+ * @since 3.1.0
  */
 
-/**
- * This is a profile page.
- *
- * @since 2.5.0
- * @var bool
- */
-define( 'IS_PROFILE_PAGE', true );
+/** Load WordPress Administration Bootstrap */
+require_once __DIR__ . '/admin.php';
 
-/** Load User Editing Page */
-require_once __DIR__ . '/user-edit.php';
+require ABSPATH . 'wp-admin/profile.php';

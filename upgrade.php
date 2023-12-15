@@ -1,162 +1,158 @@
 <?php
 /**
- * Upgrade WordPress Page.
+ * Multisite upgrade administration panel.
  *
  * @package WordPress
- * @subpackage Administration
+ * @subpackage Multisite
+ * @since 3.0.0
  */
 
-/**
- * We are upgrading WordPress.
- *
- * @since 1.5.1
- * @var bool
- */
-define( 'WP_INSTALLING', true );
+/** Load WordPress Administration Bootstrap */
+require_once __DIR__ . '/admin.php';
 
-/** Load WordPress Bootstrap */
-require dirname( __DIR__ ) . '/wp-load.php';
+require_once ABSPATH . WPINC . '/http.php';
 
-nocache_headers();
+// Used in the HTML title tag.
+$title       = __( 'Upgrade Network' );
+$parent_file = 'upgrade.php';
 
-require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+get_current_screen()->add_help_tab(
+	array(
+		'id'      => 'overview',
+		'title'   => __( 'Overview' ),
+		'content' =>
+			'<p>' . __( 'Only use this screen once you have updated to a new version of WordPress through Updates/Available Updates (via the Network Administration navigation menu or the Toolbar). Clicking the Upgrade Network button will step through each site in the network, five at a time, and make sure any database updates are applied.' ) . '</p>' .
+			'<p>' . __( 'If a version update to core has not happened, clicking this button will not affect anything.' ) . '</p>' .
+			'<p>' . __( 'If this process fails for any reason, users logging in to their sites will force the same update.' ) . '</p>',
+	)
+);
 
-delete_site_transient( 'update_core' );
+get_current_screen()->set_help_sidebar(
+	'<p><strong>' . __( 'For more information:' ) . '</strong></p>' .
+	'<p>' . __( '<a href="https://wordpress.org/documentation/article/network-admin-updates-screen/">Documentation on Upgrade Network</a>' ) . '</p>' .
+	'<p>' . __( '<a href="https://wordpress.org/support/forums/">Support forums</a>' ) . '</p>'
+);
 
-if ( isset( $_GET['step'] ) ) {
-	$step = $_GET['step'];
-} else {
-	$step = 0;
+require_once ABSPATH . 'wp-admin/admin-header.php';
+
+if ( ! current_user_can( 'upgrade_network' ) ) {
+	wp_die( __( 'Sorry, you are not allowed to access this page.' ), 403 );
 }
 
-// Do it. No output.
-if ( 'upgrade_db' === $step ) {
-	wp_upgrade();
-	die( '0' );
-}
+echo '<div class="wrap">';
+echo '<h1>' . __( 'Upgrade Network' ) . '</h1>';
 
-/**
- * @global string $wp_version             The WordPress version string.
- * @global string $required_php_version   The required PHP version string.
- * @global string $required_mysql_version The required MySQL version string.
- * @global wpdb   $wpdb                   WordPress database abstraction object.
- */
-global $wp_version, $required_php_version, $required_mysql_version, $wpdb;
+$action = isset( $_GET['action'] ) ? $_GET['action'] : 'show';
 
-$step = (int) $step;
+switch ( $action ) {
+	case 'upgrade':
+		$n = ( isset( $_GET['n'] ) ) ? (int) $_GET['n'] : 0;
 
-$php_version   = PHP_VERSION;
-$mysql_version = $wpdb->db_version();
-$php_compat    = version_compare( $php_version, $required_php_version, '>=' );
-if ( file_exists( WP_CONTENT_DIR . '/db.php' ) && empty( $wpdb->is_mysql ) ) {
-	$mysql_compat = true;
-} else {
-	$mysql_compat = version_compare( $mysql_version, $required_mysql_version, '>=' );
-}
+		if ( $n < 5 ) {
+			/**
+			 * @global int $wp_db_version WordPress database version.
+			 */
+			global $wp_db_version;
+			update_site_option( 'wpmu_upgrade_site', $wp_db_version );
+		}
 
-header( 'Content-Type: ' . get_option( 'html_type' ) . '; charset=' . get_option( 'blog_charset' ) );
-?>
-<!DOCTYPE html>
-<html <?php language_attributes(); ?>>
-<head>
-	<meta name="viewport" content="width=device-width" />
-	<meta http-equiv="Content-Type" content="<?php bloginfo( 'html_type' ); ?>; charset=<?php echo get_option( 'blog_charset' ); ?>" />
-	<meta name="robots" content="noindex,nofollow" />
-	<title><?php _e( 'WordPress &rsaquo; Update' ); ?></title>
-	<?php wp_admin_css( 'install', true ); ?>
-</head>
-<body class="wp-core-ui">
-<p id="logo"><a href="<?php echo esc_url( __( 'https://wordpress.org/' ) ); ?>"><?php _e( 'WordPress' ); ?></a></p>
-
-<?php if ( (int) get_option( 'db_version' ) === $wp_db_version || ! is_blog_installed() ) : ?>
-
-<h1><?php _e( 'No Update Required' ); ?></h1>
-<p><?php _e( 'Your WordPress database is already up to date!' ); ?></p>
-<p class="step"><a class="button button-large" href="<?php echo esc_url( get_option( 'home' ) ); ?>/"><?php _e( 'Continue' ); ?></a></p>
-
-	<?php
-elseif ( ! $php_compat || ! $mysql_compat ) :
-	$version_url = sprintf(
-		/* translators: %s: WordPress version. */
-		esc_url( __( 'https://wordpress.org/documentation/wordpress-version/version-%s/' ) ),
-		sanitize_title( $wp_version )
-	);
-
-	$php_update_message = '</p><p>' . sprintf(
-		/* translators: %s: URL to Update PHP page. */
-		__( '<a href="%s">Learn more about updating PHP</a>.' ),
-		esc_url( wp_get_update_php_url() )
-	);
-
-	$annotation = wp_get_update_php_annotation();
-
-	if ( $annotation ) {
-		$php_update_message .= '</p><p><em>' . $annotation . '</em>';
-	}
-
-	if ( ! $mysql_compat && ! $php_compat ) {
-		$message = sprintf(
-			/* translators: 1: URL to WordPress release notes, 2: WordPress version number, 3: Minimum required PHP version number, 4: Minimum required MySQL version number, 5: Current PHP version number, 6: Current MySQL version number. */
-			__( 'You cannot update because <a href="%1$s">WordPress %2$s</a> requires PHP version %3$s or higher and MySQL version %4$s or higher. You are running PHP version %5$s and MySQL version %6$s.' ),
-			$version_url,
-			$wp_version,
-			$required_php_version,
-			$required_mysql_version,
-			$php_version,
-			$mysql_version
-		) . $php_update_message;
-	} elseif ( ! $php_compat ) {
-		$message = sprintf(
-			/* translators: 1: URL to WordPress release notes, 2: WordPress version number, 3: Minimum required PHP version number, 4: Current PHP version number. */
-			__( 'You cannot update because <a href="%1$s">WordPress %2$s</a> requires PHP version %3$s or higher. You are running version %4$s.' ),
-			$version_url,
-			$wp_version,
-			$required_php_version,
-			$php_version
-		) . $php_update_message;
-	} elseif ( ! $mysql_compat ) {
-		$message = sprintf(
-			/* translators: 1: URL to WordPress release notes, 2: WordPress version number, 3: Minimum required MySQL version number, 4: Current MySQL version number. */
-			__( 'You cannot update because <a href="%1$s">WordPress %2$s</a> requires MySQL version %3$s or higher. You are running version %4$s.' ),
-			$version_url,
-			$wp_version,
-			$required_mysql_version,
-			$mysql_version
+		$site_ids = get_sites(
+			array(
+				'spam'                   => 0,
+				'deleted'                => 0,
+				'archived'               => 0,
+				'network_id'             => get_current_network_id(),
+				'number'                 => 5,
+				'offset'                 => $n,
+				'fields'                 => 'ids',
+				'order'                  => 'DESC',
+				'orderby'                => 'id',
+				'update_site_meta_cache' => false,
+			)
 		);
-	}
+		if ( empty( $site_ids ) ) {
+			echo '<p>' . __( 'All done!' ) . '</p>';
+			break;
+		}
+		echo '<ul>';
+		foreach ( (array) $site_ids as $site_id ) {
+			switch_to_blog( $site_id );
+			$siteurl     = site_url();
+			$upgrade_url = admin_url( 'upgrade.php?step=upgrade_db' );
+			restore_current_blog();
 
-	echo '<p>' . $message . '</p>';
-	?>
-	<?php
-else :
-	switch ( $step ) :
-		case 0:
-			$goback = wp_get_referer();
-			if ( $goback ) {
-				$goback = sanitize_url( $goback );
-				$goback = urlencode( $goback );
+			echo "<li>$siteurl</li>";
+
+			$response = wp_remote_get(
+				$upgrade_url,
+				array(
+					'timeout'     => 120,
+					'httpversion' => '1.1',
+					'sslverify'   => false,
+				)
+			);
+
+			if ( is_wp_error( $response ) ) {
+				wp_die(
+					sprintf(
+						/* translators: 1: Site URL, 2: Server error message. */
+						__( 'Warning! Problem updating %1$s. Your server may not be able to connect to sites running on it. Error message: %2$s' ),
+						$siteurl,
+						'<em>' . $response->get_error_message() . '</em>'
+					)
+				);
 			}
-			?>
-	<h1><?php _e( 'Database Update Required' ); ?></h1>
-<p><?php _e( 'WordPress has been updated! Next and final step is to update your database to the newest version.' ); ?></p>
-<p><?php _e( 'The database update process may take a little while, so please be patient.' ); ?></p>
-<p class="step"><a class="button button-large button-primary" href="upgrade.php?step=1&amp;backto=<?php echo $goback; ?>"><?php _e( 'Update WordPress Database' ); ?></a></p>
-			<?php
-			break;
-		case 1:
-			wp_upgrade();
 
-			$backto = ! empty( $_GET['backto'] ) ? wp_unslash( urldecode( $_GET['backto'] ) ) : __get_option( 'home' ) . '/';
-			$backto = esc_url( $backto );
-			$backto = wp_validate_redirect( $backto, __get_option( 'home' ) . '/' );
+			/**
+			 * Fires after the Multisite DB upgrade for each site is complete.
+			 *
+			 * @since MU (3.0.0)
+			 *
+			 * @param array $response The upgrade response array.
+			 */
+			do_action( 'after_mu_upgrade', $response );
+
+			/**
+			 * Fires after each site has been upgraded.
+			 *
+			 * @since MU (3.0.0)
+			 *
+			 * @param int $site_id The Site ID.
+			 */
+			do_action( 'wpmu_upgrade_site', $site_id );
+		}
+		echo '</ul>';
+		?><p><?php _e( 'If your browser does not start loading the next page automatically, click this link:' ); ?> <a class="button" href="upgrade.php?action=upgrade&amp;n=<?php echo ( $n + 5 ); ?>"><?php _e( 'Next Sites' ); ?></a></p>
+		<script type="text/javascript">
+		<!--
+		function nextpage() {
+			location.href = "upgrade.php?action=upgrade&n=<?php echo ( $n + 5 ); ?>";
+		}
+		setTimeout( "nextpage()", 250 );
+		//-->
+		</script>
+		<?php
+		break;
+	case 'show':
+	default:
+		if ( (int) get_site_option( 'wpmu_upgrade_site' ) !== $GLOBALS['wp_db_version'] ) :
 			?>
-	<h1><?php _e( 'Update Complete' ); ?></h1>
-	<p><?php _e( 'Your WordPress database has been successfully updated!' ); ?></p>
-	<p class="step"><a class="button button-large" href="<?php echo $backto; ?>"><?php _e( 'Continue' ); ?></a></p>
-			<?php
-			break;
-endswitch;
-endif;
+		<h2><?php _e( 'Database Update Required' ); ?></h2>
+		<p><?php _e( 'WordPress has been updated! Next and final step is to individually upgrade the sites in your network.' ); ?></p>
+		<?php endif; ?>
+
+		<p><?php _e( 'The database update process may take a little while, so please be patient.' ); ?></p>
+		<p><a class="button button-primary" href="upgrade.php?action=upgrade"><?php _e( 'Upgrade Network' ); ?></a></p>
+		<?php
+		/**
+		 * Fires before the footer on the network upgrade screen.
+		 *
+		 * @since MU (3.0.0)
+		 */
+		do_action( 'wpmu_upgrade_page' );
+		break;
+}
 ?>
-</body>
-</html>
+</div>
+
+<?php require_once ABSPATH . 'wp-admin/admin-footer.php'; ?>
